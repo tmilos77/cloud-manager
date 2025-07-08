@@ -25,6 +25,7 @@ import (
 	"github.com/kyma-project/cloud-manager/pkg/common/abstractions"
 	"github.com/kyma-project/cloud-manager/pkg/common/actions/focal"
 	"github.com/kyma-project/cloud-manager/pkg/composed"
+	"github.com/kyma-project/cloud-manager/pkg/jobber"
 	"github.com/kyma-project/cloud-manager/pkg/kcp/iprange"
 	awsclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/aws/client"
 	awsiprange "github.com/kyma-project/cloud-manager/pkg/kcp/provider/aws/iprange"
@@ -60,19 +61,23 @@ func SetupIpRangeReconciler(
 			azureiprange.NewStateFactory(azureProvider),
 			gcpiprange.NewStateFactory(gcpSvcNetProvider, gcpComputeProvider, env),
 		),
+		kcpManager.GetClient(), // tmp
 	).SetupWithManager(ctx, kcpManager)
 }
 
 func NewIpRangeReconciler(
 	reconciler iprange.IPRangeReconciler,
+	tmpClient client.Client,
 ) *IpRangeReconciler {
 	return &IpRangeReconciler{
 		Reconciler: reconciler,
+		tmpClient:  tmpClient,
 	}
 }
 
 type IpRangeReconciler struct {
 	Reconciler iprange.IPRangeReconciler
+	tmpClient  client.Client
 }
 
 //+kubebuilder:rbac:groups=cloud-control.kyma-project.io,resources=ipranges,verbs=get;list;watch;create;update;patch;delete
@@ -85,6 +90,9 @@ type IpRangeReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.3/pkg/reconcile
 func (r *IpRangeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	if true {
+		return jobber.NewReconciler(&cloudcontrolv1beta1.IpRange{}, r.tmpClient, r.tmpClient).Reconcile(ctx, req)
+	}
 	return r.Reconciler.Reconcile(ctx, req)
 }
 

@@ -132,6 +132,9 @@ type IpRangeStatus struct {
 	// Id to track the Hyperscaler IpRange identifier
 	// +optional
 	Id string `json:"id,omitempty"`
+
+	// +optional
+	LastReconciledGeneration int64 `json:"lastReconciledGeneration,omitempty"`
 }
 
 type IpRangeSubnets []IpRangeSubnet
@@ -193,6 +196,22 @@ type IpRange struct {
 
 	Spec   IpRangeSpec   `json:"spec,omitempty"`
 	Status IpRangeStatus `json:"status,omitempty"`
+}
+
+func (in *IpRange) GetLastReconciledGeneration() int64 {
+	return in.Status.LastReconciledGeneration
+}
+
+func (in *IpRange) SetLastReconciledGeneration(generation int64) {
+	in.Status.LastReconciledGeneration = generation
+}
+
+func (in *IpRange) JobberID() string {
+	return "kcp-iprange"
+}
+
+func (in *IpRange) JobberPodName() string {
+	return string(in.UID)
 }
 
 func (in *IpRange) ScopeRef() ScopeRef {

@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.24.4 as builder
+FROM golang:1.24.4 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -12,7 +12,7 @@ COPY go.sum go.sum
 RUN go mod download
 
 # Copy the go source
-COPY cmd/main.go cmd/main.go
+COPY cmd cmd/
 COPY api api/
 COPY pkg pkg/
 COPY internal/controller internal/controller/

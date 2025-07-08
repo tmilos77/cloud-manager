@@ -72,6 +72,9 @@ type ScopeReconciler struct {
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 func (r *ScopeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	if true {
+		return ctrl.Result{}, nil
+	}
 	return r.Reconciler.Reconcile(ctx, req)
 }
 

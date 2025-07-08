@@ -21,16 +21,14 @@ import (
 	"flag"
 	"os"
 
+	cmdjobber "github.com/kyma-project/cloud-manager/cmd/jobber"
+	"github.com/kyma-project/cloud-manager/pkg/common/bootstrap"
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/elliotchance/pie/v2"
 	"github.com/fsnotify/fsnotify"
-	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -39,17 +37,14 @@ import (
 
 	"github.com/kyma-project/cloud-manager/pkg/common/abstractions"
 	"github.com/kyma-project/cloud-manager/pkg/composed"
-	"github.com/kyma-project/cloud-manager/pkg/config"
 	"github.com/kyma-project/cloud-manager/pkg/feature"
 	featuretypes "github.com/kyma-project/cloud-manager/pkg/feature/types"
 	awsclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/aws/client"
-	awsconfig "github.com/kyma-project/cloud-manager/pkg/kcp/provider/aws/config"
 	awsexposeddataclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/aws/exposedData/client"
 	awsiprangeclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/aws/iprange/client"
 	awsnfsinstanceclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/aws/nfsinstance/client"
 	awsnukeclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/aws/nuke/client"
 	awsvpcpeeringclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/aws/vpcpeering/client"
-	azureconfig "github.com/kyma-project/cloud-manager/pkg/kcp/provider/azure/config"
 	azureexposeddataclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/azure/exposedData/client"
 	azureiprangeclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/azure/iprange/client"
 	azurenetworkclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/azure/network/client"
@@ -58,7 +53,6 @@ import (
 	azureredisinstanceclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/azure/redisinstance/client"
 	azurevnetlinkclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/azure/vnetlink/client"
 	azurevpcpeeringclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/azure/vpcpeering/client"
-	cceeconfig "github.com/kyma-project/cloud-manager/pkg/kcp/provider/ccee/config"
 	cceenfsinstanceclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/ccee/nfsinstance/client"
 	gcpclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/gcp/client"
 	gcpexposeddataclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/gcp/exposedData/client"
@@ -70,17 +64,13 @@ import (
 	gcpredisinstanceclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/gcp/redisinstance/client"
 	gcpsubnetclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/gcp/subnet/client"
 	gcpvpcpeeringclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/gcp/vpcpeering/client"
-	"github.com/kyma-project/cloud-manager/pkg/kcp/scope"
 	scopeclient "github.com/kyma-project/cloud-manager/pkg/kcp/scope/client"
-	vpcpeeringconfig "github.com/kyma-project/cloud-manager/pkg/kcp/vpcpeering/config"
 	"github.com/kyma-project/cloud-manager/pkg/migrateFinalizers"
-	"github.com/kyma-project/cloud-manager/pkg/quota"
 	awsnfsvolumebackupclient "github.com/kyma-project/cloud-manager/pkg/skr/awsnfsvolumebackup/client"
 	awsnfsvolumerestoreclient "github.com/kyma-project/cloud-manager/pkg/skr/awsnfsvolumerestore/client"
 	azurerwxpvclient "github.com/kyma-project/cloud-manager/pkg/skr/azurerwxpv/client"
 	azurerwxvolumebackupclient "github.com/kyma-project/cloud-manager/pkg/skr/azurerwxvolumebackup/client"
 	skrruntime "github.com/kyma-project/cloud-manager/pkg/skr/runtime"
-	skrruntimeconfig "github.com/kyma-project/cloud-manager/pkg/skr/runtime/config"
 	"github.com/kyma-project/cloud-manager/pkg/util"
 
 	cloudcontrolv1beta1 "github.com/kyma-project/cloud-manager/api/cloud-control/v1beta1"
@@ -90,20 +80,9 @@ import (
 	//+kubebuilder:scaffold:imports
 )
 
-var (
-	kcpScheme = runtime.NewScheme()
-	skrScheme = runtime.NewScheme()
-	setupLog  = ctrl.Log.WithName("setup")
-)
-
 func init() {
-	utilruntime.Must(clientgoscheme.AddToScheme(kcpScheme))
-	utilruntime.Must(cloudcontrolv1beta1.AddToScheme(kcpScheme))
-	utilruntime.Must(apiextensions.AddToScheme(kcpScheme))
+	// what ever kubebuilder puts here, move it to bootrstap.init()
 
-	utilruntime.Must(clientgoscheme.AddToScheme(skrScheme))
-	utilruntime.Must(cloudresourcesv1beta1.AddToScheme(skrScheme))
-	utilruntime.Must(apiextensions.AddToScheme(skrScheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -111,7 +90,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "jobber":
-			jobber()
+			cmdjobber.JobberMain()
 			return
 		}
 	}
@@ -128,7 +107,7 @@ func main() {
 	flag.BoolVar(&gcpStructuredLogging, "gcp-structured-logging", false, "Enable GCP structured logging")
 	flag.Parse()
 
-	cfg := loadConfig()
+	cfg := bootstrap.LoadConfig()
 	cfg.Read()
 
 	opts := zap.Options{}
@@ -151,25 +130,25 @@ func main() {
 	baseCtx = composed.LoggerIntoCtx(baseCtx, rootLogger)
 	ctrl.SetLogger(rootLogger)
 
-	setupLog.WithValues(
+	bootstrap.SetupLog.WithValues(
 		"scheme", "KCP",
-		"kinds", pie.Keys(kcpScheme.KnownTypes(cloudcontrolv1beta1.GroupVersion)),
+		"kinds", pie.Keys(bootstrap.KcpScheme.KnownTypes(cloudcontrolv1beta1.GroupVersion)),
 	).Info("Schema dump")
-	setupLog.WithValues(
+	bootstrap.SetupLog.WithValues(
 		"scheme", "SKR",
-		"kinds", pie.Keys(skrScheme.KnownTypes(cloudresourcesv1beta1.GroupVersion)),
+		"kinds", pie.Keys(bootstrap.SkrScheme.KnownTypes(cloudresourcesv1beta1.GroupVersion)),
 	).Info("Schema dump")
-	setupLog.WithValues("config", cfg.PrintJson()).
+	bootstrap.SetupLog.WithValues("config", cfg.PrintJson()).
 		Info("Config dump")
 
-	skrRegistry := skrruntime.NewRegistry(skrScheme)
+	skrRegistry := skrruntime.NewRegistry(bootstrap.SkrScheme)
 	activeSkrCollection := skrruntime.NewActiveSkrCollection()
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		BaseContext: func() context.Context {
 			return baseCtx
 		},
-		Scheme:                 kcpScheme,
+		Scheme:                 bootstrap.KcpScheme,
 		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
@@ -193,7 +172,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		bootstrap.SetupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
@@ -204,14 +183,14 @@ func main() {
 		Plane(featuretypes.PlaneKcp).
 		Build(ctx)
 
-	skrLoop := skrruntime.NewLooper(activeSkrCollection, mgr, skrScheme, skrRegistry, mgr.GetLogger())
+	skrLoop := skrruntime.NewLooper(activeSkrCollection, mgr, bootstrap.SkrScheme, skrRegistry, mgr.GetLogger())
 
 	//Get env
 	env := abstractions.NewOSEnvironment()
 
 	gcpClients, err := gcpclient.NewGcpClients(ctx, env.Get("GCP_SA_JSON_KEY_PATH"), env.Get("GCP_VPC_PEERING_KEY_PATH"), rootLogger.WithName("gcp-clients"))
 	if err != nil {
-		setupLog.Error(err, "Failed to create gcp clients with sa json key path: "+env.Get("GCP_SA_JSON_KEY_PATH"))
+		bootstrap.SetupLog.Error(err, "Failed to create gcp clients with sa json key path: "+env.Get("GCP_SA_JSON_KEY_PATH"))
 		os.Exit(1)
 	}
 	defer func() {
@@ -220,99 +199,99 @@ func main() {
 
 	// SKR Controllers
 	if err = cloudresourcescontroller.SetupCloudResourcesReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "CloudResources")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "CloudResources")
 		os.Exit(1)
 	}
 	if err = cloudresourcescontroller.SetupIpRangeReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "IpRange")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "IpRange")
 		os.Exit(1)
 	}
 	if err = cloudresourcescontroller.SetupAwsNfsVolumeReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AwsNfsVolume")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AwsNfsVolume")
 		os.Exit(1)
 	}
 	if err = cloudresourcescontroller.SetupGcpNfsVolumeReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GcpNfsVolume")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "GcpNfsVolume")
 		os.Exit(1)
 	}
 
-	if err = cloudresourcescontroller.SetupGcpNfsVolumeBackupReconciler(skrRegistry, gcpnfsbackupclient.NewFileBackupClientProvider(), env, setupLog); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GcpNfsVolumeBackup")
+	if err = cloudresourcescontroller.SetupGcpNfsVolumeBackupReconciler(skrRegistry, gcpnfsbackupclient.NewFileBackupClientProvider(), env); err != nil {
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "GcpNfsVolumeBackup")
 		os.Exit(1)
 	}
 
-	if err = cloudresourcescontroller.SetupGcpNfsVolumeRestoreReconciler(skrRegistry, gcpnfsrestoreclient.NewFileRestoreClientProvider(), env, setupLog); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GcpNfsVolumeRestore")
+	if err = cloudresourcescontroller.SetupGcpNfsVolumeRestoreReconciler(skrRegistry, gcpnfsrestoreclient.NewFileRestoreClientProvider(), env); err != nil {
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "GcpNfsVolumeRestore")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupAzureVpcPeeringReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AzureVpcPeering")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AzureVpcPeering")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupGcpRedisInstanceReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GcpRedisInstance")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "GcpRedisInstance")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupGcpRedisClusterReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GcpRedisCluster")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "GcpRedisCluster")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupAzureRedisInstanceReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AzureRedisInstance")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AzureRedisInstance")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupAwsRedisInstanceReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AwsRedisInstance")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AwsRedisInstance")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupAwsRedisClusterReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AwsRedisCluster")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AwsRedisCluster")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupAzureRedisClusterReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AzureRedisCluster")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AzureRedisCluster")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupAwsVpcPeeringReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AwsVpcPeering")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AwsVpcPeering")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupGcpVpcPeeringReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GcpVpcPeering")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "GcpVpcPeering")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupGcpNfsBackupScheduleReconciler(skrRegistry, env); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GcpNfsBackupSchedule")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "GcpNfsBackupSchedule")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupCceeNfsVolumeReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "CceeNfsVolume")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "CceeNfsVolume")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupAwsNfsVolumeBackupReconciler(skrRegistry, awsnfsvolumebackupclient.NewClientProvider(), env); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AwsNfsVolumeBackup")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AwsNfsVolumeBackup")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupAwsNfsBackupScheduleReconciler(skrRegistry, env); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AwsNfsBackupSchedule")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AwsNfsBackupSchedule")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupAwsNfsVolumeRestoreReconciler(skrRegistry, awsnfsvolumerestoreclient.NewClientProvider(), env); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AwsNfsVolumeRestore")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AwsNfsVolumeRestore")
 		os.Exit(1)
 	}
 
@@ -322,27 +301,27 @@ func main() {
 	//}
 
 	if err = cloudresourcescontroller.SetupAzureRwxRestoreReconciler(skrRegistry, azurerwxvolumebackupclient.NewClientProvider()); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AzureRwxVolumeRestore")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AzureRwxVolumeRestore")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupAzureRwxBackupScheduleReconciler(skrRegistry, env); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AzureRwxBackupSchedule")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AzureRwxBackupSchedule")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupAzureRwxPvReconciler(skrRegistry, azurerwxpvclient.NewClientProvider()); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AzureRwxPV")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AzureRwxPV")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupGcpSubnetReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GcpSubnet")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "GcpSubnet")
 		os.Exit(1)
 	}
 
 	if err = cloudresourcescontroller.SetupAzureVpcDnsLinkReconciler(skrRegistry); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AzureVpcDnsLink")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AzureVpcDnsLink")
 		os.Exit(1)
 	}
 
@@ -357,11 +336,11 @@ func main() {
 		azureexposeddataclient.NewClientProvider(),
 		gcpexposeddataclient.NewClientProvider(gcpClients),
 	); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Scope")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "Scope")
 		os.Exit(1)
 	}
 	if err = cloudcontrolcontroller.SetupKymaReconciler(mgr, activeSkrCollection); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Kyma")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "Kyma")
 		os.Exit(1)
 	}
 	if err = cloudcontrolcontroller.SetupNfsInstanceReconciler(
@@ -371,7 +350,7 @@ func main() {
 		cceenfsinstanceclient.NewClientProvider(),
 		env,
 	); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "NfsInstance")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "NfsInstance")
 		os.Exit(1)
 	}
 	if err = cloudcontrolcontroller.SetupVpcPeeringReconciler(
@@ -381,7 +360,7 @@ func main() {
 		gcpvpcpeeringclient.NewClientProvider(gcpClients),
 		env,
 	); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VpcPeering")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "VpcPeering")
 		os.Exit(1)
 	}
 	if err = cloudcontrolcontroller.SetupIpRangeReconciler(
@@ -393,7 +372,7 @@ func main() {
 		gcpiprangeclient.NewComputeClient(),
 		env,
 	); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "IpRange")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "IpRange")
 		os.Exit(1)
 	}
 	if err = cloudcontrolcontroller.SetupRedisInstanceReconciler(
@@ -403,7 +382,7 @@ func main() {
 		awsclient.NewElastiCacheClientProvider(),
 		env,
 	); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "RedisInstance")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "RedisInstance")
 		os.Exit(1)
 	}
 	if err = cloudcontrolcontroller.SetupNetworkReconciler(
@@ -411,7 +390,7 @@ func main() {
 		mgr,
 		azurenetworkclient.NewClientProvider(),
 	); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Network")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "Network")
 		os.Exit(1)
 	}
 	if err = cloudcontrolcontroller.SetupNukeReconciler(
@@ -422,7 +401,7 @@ func main() {
 		azurenukeclient.NewClientProvider(),
 		env,
 	); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Nuke")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "Nuke")
 		os.Exit(1)
 	}
 	if err = cloudcontrolcontroller.SetupRedisClusterReconciler(
@@ -431,7 +410,7 @@ func main() {
 		azureredisclusterclient.NewClientProvider(),
 		env,
 	); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "RedisCluster")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "RedisCluster")
 		os.Exit(1)
 	}
 	if err = cloudcontrolcontroller.SetupGcpRedisClusterReconciler(
@@ -439,7 +418,7 @@ func main() {
 		gcpredisclusterclient.NewMemorystoreClientProvider(gcpClients),
 		env,
 	); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GcpRedisCluster")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "GcpRedisCluster")
 		os.Exit(1)
 	}
 	if err = cloudcontrolcontroller.SetupGcpSubnetReconciler(
@@ -449,7 +428,7 @@ func main() {
 		gcpsubnetclient.NewNetworkConnectivityClientProvider(gcpClients),
 		env,
 	); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GcpSubnet")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "GcpSubnet")
 		os.Exit(1)
 	}
 
@@ -458,30 +437,30 @@ func main() {
 		azurevnetlinkclient.NewClientProvider(),
 		env,
 	); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AzureVNetLink")
+		bootstrap.SetupLog.Error(err, "unable to create controller", "controller", "AzureVNetLink")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
+		bootstrap.SetupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
+		bootstrap.SetupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
 
 	err = mgr.Add(skrLoop)
 	if err != nil {
-		setupLog.Error(err, "error adding SkrLooper to KCP manager")
+		bootstrap.SetupLog.Error(err, "error adding SkrLooper to KCP manager")
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
+	bootstrap.SetupLog.Info("starting manager")
 
 	if err := feature.Initialize(ctx, rootLogger.WithName("ff")); err != nil {
-		setupLog.Error(err, "problem initializing feature flags")
+		bootstrap.SetupLog.Error(err, "problem initializing feature flags")
 	}
 
 	go func() {
@@ -499,7 +478,7 @@ func main() {
 	// TODO: Remove in next release - after 1.2.5 is released, aka in the 1.2.6
 	// Finalizer migration
 	func() {
-		migLogger := setupLog.WithName("kcpFinalizerMigration")
+		migLogger := bootstrap.SetupLog.WithName("kcpFinalizerMigration")
 		mig := migrateFinalizers.NewMigrationForKcp(mgr.GetAPIReader(), mgr.GetClient(), migLogger)
 		_, err := mig.Run(ctx)
 		if err != nil {
@@ -508,30 +487,7 @@ func main() {
 	}()
 
 	if err := mgr.Start(ctx); err != nil {
-		setupLog.Error(err, "problem running manager")
+		bootstrap.SetupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-}
-
-func loadConfig() config.Config {
-	env := abstractions.NewOSEnvironment()
-	configDir := env.Get("CONFIG_DIR")
-	if len(configDir) < 1 {
-		configDir = "./config/config"
-	}
-	cfg := config.NewConfig(env)
-	cfg.BaseDir(configDir)
-
-	awsconfig.InitConfig(cfg)
-	azureconfig.InitConfig(cfg)
-	cceeconfig.InitConfig(cfg)
-	quota.InitConfig(cfg)
-	skrruntimeconfig.InitConfig(cfg)
-	scope.InitConfig(cfg)
-	gcpclient.InitConfig(cfg)
-	vpcpeeringconfig.InitConfig(cfg)
-
-	cfg.Read()
-
-	return cfg
 }

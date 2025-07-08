@@ -189,6 +189,9 @@ spec:
               id:
                 description: Id to track the Hyperscaler IpRange identifier
                 type: string
+              lastReconciledGeneration:
+                format: int64
+                type: integer
               opIdentifier:
                 description: Operation Identifier to track the Hyperscaler Operation
                 type: string

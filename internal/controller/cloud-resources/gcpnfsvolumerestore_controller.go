@@ -18,7 +18,7 @@ package cloudresources
 
 import (
 	"context"
-	"github.com/go-logr/logr"
+
 	cloudresourcesv1beta1 "github.com/kyma-project/cloud-manager/api/cloud-resources/v1beta1"
 	"github.com/kyma-project/cloud-manager/pkg/common/abstractions"
 	gcpclient "github.com/kyma-project/cloud-manager/pkg/kcp/provider/gcp/client"
@@ -71,7 +71,7 @@ func (f *GcpNfsVolumeRestoreReconcilerFactory) New(args reconcile2.ReconcilerArg
 }
 
 func SetupGcpNfsVolumeRestoreReconciler(reg skrruntime.SkrRegistry, fileRestoreClientProvider gcpclient.ClientProvider[gcpnfsrestoreclient.FileRestoreClient],
-	env abstractions.Environment, logger logr.Logger) error {
+	env abstractions.Environment) error {
 	return reg.Register().
 		WithFactory(&GcpNfsVolumeRestoreReconcilerFactory{fileRestoreClientProvider: fileRestoreClientProvider, env: env}).
 		For(&cloudresourcesv1beta1.GcpNfsVolumeRestore{}).

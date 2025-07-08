@@ -1,4 +1,4 @@
-package jobber
+package config
 
 import (
 	"time"
@@ -8,6 +8,9 @@ import (
 
 type JobberConfigStruct struct {
 	Image string `json:"image" yaml:"image"`
+
+	Namespace          string `json:"namespace" yaml:"namespace"`
+	ServiceAccountName string `json:"serviceAccountName" yaml:"serviceAccountName"`
 
 	PodRunningTimeout             time.Duration `json:"podRunningTimeout" yaml:"podRunningTimeout"`
 	TerminationGracePeriodSeconds int64         `json:"terminationGracePeriodSeconds" yaml:"terminationGracePeriodSeconds"`
@@ -40,8 +43,17 @@ func InitConfig(cfg config.Config) {
 
 		config.Path(
 			"image",
-			config.SourceEnv("JOBBER_IMAGE"),
-			config.DefaultScalar(""),
+			config.SourceEnv("IMAGE"),
+		),
+		config.Path(
+			"namespace",
+			config.SourceEnv("NAMESPACE"),
+			config.DefaultScalar("kcp-system"),
+		),
+		config.Path(
+			"serviceAccountName",
+			config.SourceEnv("SERVICE_ACCOUNT_NAME"),
+			config.DefaultScalar("cloud-manager"),
 		),
 
 		config.Path(
